@@ -23,7 +23,7 @@ class ActionBertModel(torch.nn.Module):
 
     def forward(self,
                 input_ids,
-                attention_mask,
+                attention_mask, 
                 token_type_ids,
                 action_label=None):
         pooled_output = self.bert_model(input_ids=input_ids,
