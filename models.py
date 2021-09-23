@@ -28,7 +28,8 @@ class ActionBertModel(torch.nn.Module):
                 action_label=None):
         pooled_output = self.bert_model(input_ids=input_ids,
                                         attention_mask=attention_mask,
-                                        token_type_ids=token_type_ids)[1]
+                                        token_type_ids=token_type_ids,
+                                        return_dict=False)[1]
         action_logits = self.action_classifier(self.dropout(pooled_output))
 
         # Compute losses if labels provided
@@ -63,16 +64,18 @@ class SchemaActionBertModel(torch.nn.Module):
                 sc_attention_mask,
                 sc_token_type_ids,
                 sc_tasks,
-                sc_action_label,
-                sc_full_graph):
+                sc_action_label):
         all_output, pooled_output = self.bert_model(input_ids=input_ids,
                                                     attention_mask=attention_mask,
-                                                    token_type_ids=token_type_ids)
+                                                    token_type_ids=token_type_ids,
+                                                    return_dict=False)
+        print(f"pooled_output: {pooled_output}")
         action_logits = self.action_classifier(self.dropout(pooled_output))
 
         sc_all_output, sc_pooled_output = self.bert_model(input_ids=sc_input_ids,
                                                           attention_mask=sc_attention_mask,
-                                                          token_type_ids=sc_token_type_ids)
+                                                          token_type_ids=sc_token_type_ids,
+                                                          return_dict=False)
 
 
 
@@ -104,12 +107,12 @@ class SchemaActionBertModel(torch.nn.Module):
                 sc_all_output,
                 sc_pooled_output,
                 sc_tasks,
-                sc_action_label,
-                sc_full_graph):
+                sc_action_label):
 
         all_output, pooled_output = self.bert_model(input_ids=input_ids,
                                         attention_mask=attention_mask,
-                                        token_type_ids=token_type_ids)
+                                        token_type_ids=token_type_ids,
+                                        return_dict=False)
         action_logits = self.action_classifier(self.dropout(pooled_output))
 
         all_output_flat = all_output.view(-1, all_output.size(-1))

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 from transformers import AdamW, GPT2Tokenizer, GPT2LMHeadModel
 from tokenizers import BertWordPieceTokenizer
-from data_readers import filter_dataset, get_entities, GPTDataset, NextActionDataset, NextActionSchema, ResponseGenerationDataset
+from data_readers import filter_dataset, NextActionDataset, NextActionSchema
 from models import ActionBertModel, SchemaActionBertModel
 from sklearn.metrics import f1_score
 from nltk.translate.bleu_score import corpus_bleu
@@ -88,8 +88,7 @@ def evaluate(model,
                                                      sc_all_output=sc_all_output,
                                                      sc_pooled_output=sc_pooled_output,
                                                      sc_tasks=sc_tasks,
-                                                     sc_action_label=sc_action_label,
-                                                     sc_full_graph=schema_dataloader.dataset.full_graph)
+                                                     sc_action_label=sc_action_label)
                 else:
                     action_logits, _ = model(input_ids=batch["input_ids"],
                                              attention_mask=batch["attention_mask"],
@@ -293,6 +292,7 @@ def train(args, exp_setting=None):
 
                 # Train model
                 if args.use_schema:
+                    print("Using schema.")
                     # Get schema batch and move to GPU
                     sc_batch = next(iter(schema_test_dataloader))
 
@@ -317,6 +317,10 @@ def train(args, exp_setting=None):
                                 continue
 
                             sc_batch[key] = sc_batch[key].to(args.device)
+                    
+                        print("Moved data to GPU.")
+                    else:
+                        print("Could not move data to GPU.")
 
                     _, loss = model(input_ids=batch["input_ids"],
                                     attention_mask=batch["attention_mask"],
@@ -327,26 +331,32 @@ def train(args, exp_setting=None):
                                     sc_attention_mask=sc_batch["attention_mask"],
                                     sc_token_type_ids=sc_batch["token_type_ids"],
                                     sc_tasks=sc_batch["task"],
-                                    sc_action_label=sc_batch["action"],
-                                    sc_full_graph=schema.full_graph)
+                                    sc_action_label=sc_batch["action"])
+                    
+                    print("Model loss computed (1).")
                 else:
                     _, loss = model(input_ids=batch["input_ids"],
                                     attention_mask=batch["attention_mask"],
                                     token_type_ids=batch["token_type_ids"],
                                     action_label=batch["action"])
+                    print("Model loss computed (2).")
 
                 if args.grad_accum > 1:
                     loss = loss / args.grad_accum
 
                 loss.backward()
                 epoch_loss += loss.item()
+                
+                print("Backprop done.")
 
                 if args.grad_accum <= 1 or num_batches % args.grad_accum == 0:
                     if args.max_grad_norm > 0:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
                     optimizer.step()
+                    print("Gradient update done.")
                     model.zero_grad()
+                    print("Zero grad called.")
 
             print("Epoch loss: {}".format(epoch_loss / num_batches))
 
