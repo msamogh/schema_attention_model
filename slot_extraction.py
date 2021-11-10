@@ -45,16 +45,16 @@ def get_entity(slot_name, sys_query, usr_response):
     return entity
 
 
-def to_db_query_string(slots):
-    utt_text = "[QUERY] "
+def to_db_result_string(slots):
+    utt_text = "[RESULT] "
     for slot_key, slot_value in slots.items():
         utt_text += f"{slot_key} = {slot_value} ; "
     return utt_text
 
-def to_db_result_string(result):
-    utt_text = "[RESULT] "
-    if 'Item' not in utt:
-        utt_text += "NO RESULT"
-    else:
-        for key,val in utt['Item'].items():
-            utt_text += "{} = {} ; ".format(key, val)
+# def to_db_result_string(result):
+#     utt_text = "[RESULT] "
+#     if 'Item' not in utt:
+#         utt_text += "NO RESULT"
+#     else:
+#         for key,val in utt['Item'].items():
+#             utt_text += "{} = {} ; ".format(key, val)

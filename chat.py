@@ -20,7 +20,7 @@ from models import ActionBertModel, SchemaActionBertModel
 from STAR.apis import api
 
 from data_model_utils import CURR_DIR, get_system_action, load_saved_model
-from slot_extraction import get_entity, to_db_query_string
+from slot_extraction import get_entity, to_db_result_string
 
 
 def user_utterance_to_model_input(user_input, requested_entity_name):
@@ -54,26 +54,29 @@ def explicitize_user_input(user_input, requested_entity_name):
 def get_turn_str(speaker, utterance):
     return "[{}] {} [SEP] ".format(speaker, utterance.strip())
 
-def make_api_call(task, slots):
-    def to_title_case(key):
-        return key.title().replace(" ", "").strip()
-    return api.call_api(
-        task,
-        constraints=[{
-            to_title_case(k): v for k, v in slots.items()
-        }],
-    )[0]
 
 def get_db_result_string(task, request_type, slots):
     assert request_type in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]
     
     # Sets RequestType to "", "Book", or "Check".
     slots["request type"] = request_type[1:-1][len("QUERY_"):].title()
-    print(f"You provided: {slots}")
+#     print(f"You provided: {slots}")
+    
+    def to_title_case(key):
+        return key.title().replace(" ", "").strip()
 
-    api_response = make_api_call(task, slots)
-    db_result_string = to_db_query_string(api_response)
-    return db_result_string
+    api_response = api.call_api(
+        task,
+        constraints=[{
+            to_title_case(k): v for k, v in slots.items()
+        }],
+    )[0]
+
+    db_result_string = to_db_result_string(api_response)
+    return db_result_string, api_response
+
+def title_to_snake_case(s):
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', s).lower()
 
     
 def chat(domain, task):
@@ -86,20 +89,26 @@ def chat(domain, task):
     history = ""
     prev_sys_response = ""
     slots = dict()
+    
+    db_result_string = None
+    db_result_dict = None
 
     while True:
         # Fetch user input
-        user_input_raw = input("USER: >> ").strip().lower()
-        requested_entity_name = get_requested_entity_if_exists(prev_sys_response)
-        user_input_model = user_utterance_to_model_input(
-            user_input_raw,
-            requested_entity_name
-        )
-        if requested_entity_name is not None:
-            entity_name = requested_entity_name
-            entity_value = get_entity(requested_entity_name, system_response, user_input_raw)
-            slots[entity_name] = entity_value
-        history += user_input_model
+        if db_result_string is not None:
+            history += db_result_string
+        else:
+            user_input_raw = input("USER: >> ").strip().lower()
+            requested_entity_name = get_requested_entity_if_exists(prev_sys_response)
+            user_input_model = user_utterance_to_model_input(
+                user_input_raw,
+                requested_entity_name
+            )
+            if requested_entity_name is not None:
+                entity_name = requested_entity_name
+                entity_value = get_entity(requested_entity_name, system_response, user_input_raw)
+                slots[entity_name] = entity_value
+            history += user_input_model
 
         # Get system action and ask user to rephrase if necessary
         system_action, is_ambiguous = get_system_action(MODEL, history, domain, task)
@@ -111,19 +120,26 @@ def chat(domain, task):
             history = history[:-len(user_input_model)]
             continue
         system_response = DOMAIN["replies"][system_action]
+        if db_result_string is not None:
+            system_response = system_response.format(
+                **{title_to_snake_case(k): v for k, v in db_result_dict.items()}
+            )
+        
+        # Reset database result variables
+        db_result_string = None
+        db_result_dict = None
 
         # Handle DB calls separately
         if system_response in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]:
-            db_result_string = get_db_result_string(task=task, request_type=system_response, slots=slots)
-            print(f"API: {db_result_string}")
-            prev_sys_response = db_result_string
-            system_response_model = get_turn_str("Agent")
+            db_result_string, db_result_dict = get_db_result_string(task=task, request_type=system_response, slots=slots)
+            pass
+#             print(f"API: {db_result_string}")
         else:
-            prev_sys_response = system_response
             print(f"SYS: >> {remove_entity_annotations(system_response)}")
-            system_response_model = get_turn_str(
-                "Agent", remove_entity_annotations(prev_sys_response)
-            )
+        prev_sys_response = system_response
+        system_response_model = get_turn_str(
+            "Agent", remove_entity_annotations(prev_sys_response)
+        )
         history += system_response_model
 
 
