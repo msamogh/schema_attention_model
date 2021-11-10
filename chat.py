@@ -60,7 +60,6 @@ def get_db_result_string(task, request_type, slots):
     
     # Sets RequestType to "", "Book", or "Check".
     slots["request type"] = request_type[1:-1][len("QUERY_"):].title()
-#     print(f"You provided: {slots}")
     
     def to_title_case(key):
         return key.title().replace(" ", "").strip()
@@ -80,7 +79,6 @@ def title_to_snake_case(s):
 
     
 def chat(domain, task):
-    import os
     DOMAIN = json.load(
         open(os.path.join(CURR_DIR, "STAR", "tasks", task, f"{task}.json"), "r")
     )
@@ -90,6 +88,7 @@ def chat(domain, task):
     prev_sys_response = ""
     slots = dict()
     
+    db_results_so_far = {}
     db_result_string = None
     db_result_dict = None
 
@@ -122,8 +121,9 @@ def chat(domain, task):
         system_response = DOMAIN["replies"][system_action]
         if db_result_string is not None:
             system_response = system_response.format(
-                **{title_to_snake_case(k): v for k, v in db_result_dict.items()}
+                **{title_to_snake_case(k): v for k, v in db_results_so_far.items()}
             )
+
         
         # Reset database result variables
         db_result_string = None
@@ -132,8 +132,7 @@ def chat(domain, task):
         # Handle DB calls separately
         if system_response in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]:
             db_result_string, db_result_dict = get_db_result_string(task=task, request_type=system_response, slots=slots)
-            pass
-#             print(f"API: {db_result_string}")
+            db_results_so_far.update(**db_result_dict)
         else:
             print(f"SYS: >> {remove_entity_annotations(system_response)}")
         prev_sys_response = system_response

@@ -18,7 +18,7 @@
         "user_ride_book_no_booking": "No, don't book it",
         "ride_inform_search_criteria": "I can also filter for service provider, driver name, and the car's model.",
         "db_confirm_booking": "[RESULT] APIName = ride_book ; Message = Ride booked. ; ",
-        "ride_confirm_booking": "Ok, I have booked you a ride with licence plate '{license_plate:s}'. Your booking ID is '{booking_id:d}'.",
+        "ride_confirm_booking": "Ok, I have booked you a ride with licence plate '{license_plate:s}'. Your booking ID is '{id:d}'.",
         "user_ride_book_ask_driver": "Who is the driver?",
         "ride_provide_driver_details": "Your driver will be {driver_name:s}.",
         "db_inform_nothing_found": "[RESULT] NO RESULT",
