@@ -264,7 +264,7 @@ def trip_directions(trip_api, constraints: Dict[Text, Any]):
     del constraints['ArrivalLocation']
 
     if constraints['TravelMode'] != 'Transit':
-      del constraints['Price']
+        del constraints['Price']
 
     row, _ = trip_api.sample(constraints)
 
@@ -284,7 +284,7 @@ def trip_directions(trip_api, constraints: Dict[Text, Any]):
 
 def ride_book(ride_api, constraints: Dict[Text, Any]):
     if constraints["RequestType"] == "Book":
-      return dict(Message="Ride booked."), -1
+        return dict(Message="Ride booked."), -1
 
     query_properties = {
         "DepartureLocation": constraints["DepartureLocation"],
@@ -335,7 +335,7 @@ def bank_balance(bank_api, constraints: Dict[Text, Any]):
     req1 = ['AccountNumber', 'FullName', 'PIN']
     req2 = ['FullName', 'SecurityAnswer1', 'SecurityAnswer2', 'DateOfBirth']
     if not all(e in constraints for e in req1) and not all(e in constraints for e in req2):
-      return dict(Message="You must provide either AccountNumber/FullName/PIN or FullName/DateOfBirth/SecurityAnswer1/SecurityAnswer2. We cannot authenticate the user otherwise."), -1
+        return dict(Message="You must provide either AccountNumber/FullName/PIN or FullName/DateOfBirth/SecurityAnswer1/SecurityAnswer2. We cannot authenticate the user otherwise."), -1
 
     row, count = bank_api.sample({})
     return row._settings, -1
@@ -345,7 +345,7 @@ def bank_fraud_report(bank_api, constraints: Dict[Text, Any]):
     req1 = ['AccountNumber', 'FullName', 'PIN']
     req2 = ['FullName', 'SecurityAnswer1', 'SecurityAnswer2', 'DateOfBirth']
     if not all(e in constraints for e in req1) and not all(e in constraints for e in req2):
-      return dict(Message="You must provide either AccountNumber/FullName/PIN or FullName/DateOfBirth/SecurityAnswer1/SecurityAnswer2. We cannot authenticate the user otherwise."), -1
+          return dict(Message="You must provide either AccountNumber/FullName/PIN or FullName/DateOfBirth/SecurityAnswer1/SecurityAnswer2. We cannot authenticate the user otherwise."), -1
 
     return {"Confirmation": "Fraud report submitted successfully."}, -1
 
@@ -444,7 +444,7 @@ def apartment_schedule(
     ]
     if random.random() > 0.5 or constraints["RequestType"] == "Book":
         if constraints["RequestType"] != "Book":
-          return {"Message": "The time slot is available."}, -1
+            return {"Message": "The time slot is available."}, -1
 
         required_items = [
             "Passport",
@@ -482,14 +482,13 @@ def getval(constraints, key, db):
     """
     value = constraints[key]
     if callable(value):
-      # find param
-      param = [e for e in db.parameters if e['Name'] == key][0]
-      if 'Categories' not in param:
-        return ''
-      
-      return [e for e in param['Categories'] if value(e)][0]
+        # find param
+        param = [e for e in db.parameters if e['Name'] == key][0]
+        if 'Categories' not in param:
+            return ''
+        return [e for e in param['Categories'] if value(e)][0]
     else:
-      return value
+        return value
 
 
 def party_plan(schedule_api, constraints: Dict[Text, Any]):
@@ -507,7 +506,7 @@ def party_plan(schedule_api, constraints: Dict[Text, Any]):
     time = getval(constraints, 'StartTimeHour', schedule_api)
 
     if constraints["RequestType"] == "Book":
-      return dict(Message=size_outputs[0], VenueName=venue_name, Day=day, Time=time), -1
+        return dict(Message=size_outputs[0], VenueName=venue_name, Day=day, Time=time), -1
 
     if random.random() < 0.1:
         return dict(Message=schedule_outputs[1], VenueName=venue_name, Day=day, Time=time), -1
@@ -590,6 +589,7 @@ def call_api(api_name, constraints: List[Dict[Text, Any]]) -> Tuple[Dict[Text, A
     else:
         all_provided_parameters = set()
 
+    print(all_provided_parameters)
     for parameter in api_schema["required"]:
         if parameter not in all_provided_parameters:
             raise ValueError(

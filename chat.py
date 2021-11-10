@@ -3,6 +3,9 @@ import json
 import numpy as np
 import os
 import random
+from dataclasses import dataclass
+from typing import List
+import re
 import torch
 from pprint import pprint
 
@@ -11,211 +14,116 @@ from collections import Counter, defaultdict
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 from tokenizers import BertWordPieceTokenizer
+
 from data_readers import filter_dataset, NextActionDataset, NextActionSchema
 from models import ActionBertModel, SchemaActionBertModel
+from STAR.apis import api
+
+from data_model_utils import CURR_DIR, get_system_action, load_saved_model
+from slot_extraction import get_entity
 
 
-CURR_DIR = os.path.abspath(os.path.dirname(__file__))
-CHAT_ARGS = {
-    "data_path": os.path.join(CURR_DIR, "STAR/dialogues/"),
-    "schema_path": os.path.join(CURR_DIR, "STAR/tasks/"),
-    "token_vocab_path": os.path.join(CURR_DIR, "bert-base-uncased-vocab.txt"),
-    "output_dir": os.path.join(CURR_DIR, "sam_task_transfer/"),
-    "task": "action",
-    "max_seq_length": 100,
-    "dropout": 0.5,
-    "schema_max_seq_length": 50,
-    "model_path": os.path.join(CURR_DIR, "final_standard_sam"),
-    "use_schema": True
-}
-TOKEN_VOCAB_NAME = os.path.basename(CHAT_ARGS["token_vocab_path"]).replace(".txt", "")
+def user_utterance_to_model_input(user_input, requested_entity_name):
+    if len(user_input) < 8 and ("hello" in user_input or "hi" in user_input or "hey" in user_input):
+        user_input = "hello hello"
+    user_input = explicitize_user_input(user_input, requested_entity_name)
+    user_input = get_turn_str("User", user_input)
+    return user_input
 
+def get_requested_entity_if_exists(system_response):
+    search_result = re.search(r"%%(.*)%%", system_response)
+    if search_result is not None:
+        requested_entity = search_result.group(1)
+        return requested_entity
+    search_result = re.search(r"%(.*)%", system_response)
+    if search_result is not None:
+        requested_entity = search_result.group(1)
+        return requested_entity
+    return None
 
-def get_schema_tokenizer():
-    sc_tokenizer = BertWordPieceTokenizer(
-        CHAT_ARGS["token_vocab_path"],
-        lowercase=True
+def remove_entity_annotations(system_response):
+    system_response = re.sub(r"%%(.*)%%", "", system_response)
+    system_response = system_response.replace("%", "")
+    return system_response
+
+def explicitize_user_input(user_input, requested_entity_name):
+    if requested_entity_name is not None:
+        user_input = f"The {requested_entity_name} is {user_input}."
+    return user_input
+
+def get_turn_str(speaker, utterance):
+    return "[{}] {} [SEP] ".format(speaker, utterance.strip())
+
+def make_api_call(task, slots):
+    def to_title_case(key):
+        return key.title().replace(" ", "").strip()
+    return api.call_api(
+        task,
+        constraints=[{
+            to_title_case(k): v for k, v in slots.items()
+        }],
     )
-    sc_tokenizer.enable_padding(
-        length=CHAT_ARGS["schema_max_seq_length"]
+
+def handle_api_call(task, request_type, slots):
+    assert request_type in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]
+    
+    # Sets RequestType to "", "Book", or "Check".
+    slots["RequestType"] = request_type[1:-1][len("QUERY_"):].title()
+    print(f"You provided: {slots}")
+
+    db_response = make_api_call(task, slots)
+    return db_response
+
+    
+def chat(domain, task):
+    import os
+    print(os.path.dirname(os.path.abspath(__file__)))
+    DOMAIN = json.load(
+        open(os.path.join(CURR_DIR, "STAR", "tasks", task, f"{task}.json"), "r")
     )
-    return sc_tokenizer
+    MODEL = load_saved_model(task=task)
 
-def get_schema_dataset(sc_tokenizer, action_label_to_id):
-    schema = NextActionSchema(
-        CHAT_ARGS["schema_path"],
-        sc_tokenizer,
-        CHAT_ARGS["schema_max_seq_length"],
-        action_label_to_id,
-        TOKEN_VOCAB_NAME
-    )
-    return schema
-
-def get_schema_dataloader(schema_dataset):
-    schema_dataloader = DataLoader(
-        dataset=schema_dataset,
-        batch_size=len(schema_dataset),
-        pin_memory=True,
-        shuffle=True
-    )
-    return schema_dataloader
-
-def get_tokenizer():
-    tokenizer = BertWordPieceTokenizer(
-        CHAT_ARGS["token_vocab_path"],
-        lowercase=True
-    )
-    tokenizer.enable_padding(
-        length=CHAT_ARGS["max_seq_length"]
-    )
-    return tokenizer
-
-def get_dataset(tokenizer):
-    dataset = NextActionDataset(
-        CHAT_ARGS["data_path"],
-        tokenizer,
-        CHAT_ARGS["max_seq_length"],
-        TOKEN_VOCAB_NAME
-    )
-    return dataset
-
-def get_dataloader(dataset):
-    return DataLoader(
-        dataset=dataset,
-        batch_size=CHAT_ARGS["train_batch_size"],
-        pin_memory=True
-    )             
-
-DOMAIN_STR = "hotel"
-TASK_STR = "hotel_book"
-DOMAIN = json.load(open(os.path.join(CURR_DIR, "STAR", "tasks", TASK_STR, f"{TASK_STR}.json"), "r"))
-# from pprint import pprint
-# pprint(DOMAIN)
-
-###################################################
-
-model = SchemaActionBertModel("bert-base-uncased", 0.5, 166).cuda()
-ckpt = torch.load("/blue/boyer/amogh.mannekote/sds-project/final_domaintransfer_zeroshot_sam_best_fixed/ride/model.pt")
-model.load_state_dict(ckpt)
-
-orig_tokenizer = get_tokenizer()
-orig_dataset = get_dataset(orig_tokenizer)
-
-schema_tokenizer = get_schema_tokenizer()
-schema_dataset = get_schema_dataset(
-    schema_tokenizer,
-    orig_dataset.action_label_to_id
-)
-schema_dataloader = get_schema_dataloader(schema_dataset)
-
-def chat():
     history = ""
+    prev_sys_response = ""
+    slots = dict()
+
     while True:
-        # 1. get user input
-        # 2. update history
-        # 3. pass to model + get sys resp
-        # 4. update history
-        # 5. go back to 1
+        # Fetch user input
+        user_input_raw = input("USER: >> ").strip().lower()
+        requested_entity_name = get_requested_entity_if_exists(prev_sys_response)
+        user_input_model = user_utterance_to_model_input(
+            user_input_raw,
+            requested_entity_name
+        )
+        if requested_entity_name is not None:
+            entity_name = requested_entity_name
+            entity_value = get_entity(requested_entity_name, system_response, user_input_raw)
+            slots[entity_name] = entity_value
+        history += user_input_model
 
+        # Get system action and ask user to rephrase if necessary
+        system_action, is_ambiguous = get_system_action(MODEL, history, domain, task)
+        if is_ambiguous:
+            print(f"SYS: >> Sorry, I didn't catch that. "
+                  f"Could you rephrase that more explicitly?\n"
+                  f"{remove_entity_annotations(prev_sys_response)}")
+            # Undo appending of the latest user utterance.
+            history = history[:-len(user_input_model)]
+            continue
+        system_response = DOMAIN["replies"][system_action]
 
-        user_input = input("USER: >> ")
-        history += "[{}] {} [SEP] ".format("User", user_input.strip())
-        system_response = get_next_utterance(user_input)
-        output_reply = DOMAIN["replies"][system_response]
-        print(f"SYS: >> {output_reply}")
-        history+="[{}] {} [SEP] ".format("Agent", output_reply.strip())
+        # Handle DB calls separately
+        if system_response in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]:
+            api_response = handle_api_call(task=task, request_type=system_response, slots=slots)
+            print(f"API: {api_response}")
+            
+        prev_sys_response = system_response
+        print(f"SYS: >> {remove_entity_annotations(system_response)}")
 
-        # TODO: handle query later
-        
-
-
-def get_next_utterance(history, device=0):
-    dataset = history_to_dataset(history)
-    eval_dataloader = DataLoader(dataset, batch_size=1, pin_memory=True)
-    
-    id_map = orig_dataset.action_label_to_id
-    label_map = sorted(id_map, key=id_map.get)
-
-    sentence = []
-    preds = []
-
-    model.eval()
-    batch = next(iter(eval_dataloader))
-    
-    # Get schema pooled outputs
-    with torch.no_grad():
-        sc_batch = next(iter(schema_dataloader))
-        if torch.cuda.is_available():
-            for key, val in sc_batch.items():
-                if type(sc_batch[key]) is list:
-                    continue
-                sc_batch[key] = sc_batch[key].to(device)
-
-        try:
-            sc_all_output, sc_pooled_output = model.bert_model(input_ids=sc_batch["input_ids"],
-                                                attention_mask=sc_batch["attention_mask"],
-                                                token_type_ids=sc_batch["token_type_ids"],
-                                                return_dict=False)
-        except Exception as e:
-            print(e)
-        sc_action_label = sc_batch["action"]
-        sc_tasks = sc_batch["task"]
-
-        # Move to GPU
-        if torch.cuda.is_available():
-            for key, val in batch.items():
-                if type(batch[key]) is list:
-                    continue
-                batch[key] = batch[key].to(device)
-
-        print("======MAIN MODEL INPUT PARAMS======")
-        action_logits, _ = model.predict(input_ids=batch["input_ids"],
-                                        attention_mask=batch["attention_mask"],
-                                        token_type_ids=batch["token_type_ids"],
-                                        tasks=batch["tasks"],
-                                        sc_all_output=sc_all_output,
-                                        sc_pooled_output=sc_pooled_output,
-                                        sc_tasks=sc_tasks,
-                                        sc_action_label=sc_action_label)
-        # Argmax to get predictions
-        action_preds = torch.argmax(action_logits, dim=1).cpu().tolist()
-        preds += action_preds
-        sentence += [orig_tokenizer.decode(e.tolist(), skip_special_tokens=False).replace(" [PAD]", "") for e in batch["input_ids"]]
-
-    # Perform evaluation
-    return label_map[preds[0]]
-
-def history_to_dataset(history):
-    max_seq_length = 100
-    
-    # history += "[{}] {} [SEP] ".format("User", utt_text.strip())
-    processed_history = ' '.join(history.strip().split()[:-1])
-    encoded_history  = orig_tokenizer.encode(processed_history)
-
-    examples = [{
-        "input_ids": np.array(encoded_history.ids)[-max_seq_length:],
-        "attention_mask": np.array(encoded_history.attention_mask)[-max_seq_length:],
-        "token_type_ids": np.array(encoded_history.type_ids)[-max_seq_length:],
-        "dialog_id": 75, # keep it constant
-        "domains": DOMAIN_STR,
-        "tasks": TASK_STR,
-        "happy": True, # shouldn't matter
-        "multitask": False,
-        "orig_history": processed_history,
-    }]
-
-    return SingleUtteranceDataset(examples)
-
-class SingleUtteranceDataset(torch.utils.data.Dataset):
-    
-    def __init__(self, examples):
-        self.examples = examples
-    
-    def __getitem__(self, idx):
-        return self.examples[idx]
-    
-    def __len__(self):
-        return len(self.examples)
+        system_response_model = get_turn_str(
+            "Agent", remove_entity_annotations(system_response)
+        )
+        history += system_response_model
 
 
 if __name__ == "__main__":
