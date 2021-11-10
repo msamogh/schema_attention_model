@@ -20,7 +20,7 @@ from models import ActionBertModel, SchemaActionBertModel
 from STAR.apis import api
 
 from data_model_utils import CURR_DIR, get_system_action, load_saved_model
-from slot_extraction import get_entity
+from slot_extraction import get_entity, to_db_query_string
 
 
 def user_utterance_to_model_input(user_input, requested_entity_name):
@@ -62,22 +62,22 @@ def make_api_call(task, slots):
         constraints=[{
             to_title_case(k): v for k, v in slots.items()
         }],
-    )
+    )[0]
 
-def handle_api_call(task, request_type, slots):
+def get_db_result_string(task, request_type, slots):
     assert request_type in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]
     
     # Sets RequestType to "", "Book", or "Check".
-    slots["RequestType"] = request_type[1:-1][len("QUERY_"):].title()
+    slots["request type"] = request_type[1:-1][len("QUERY_"):].title()
     print(f"You provided: {slots}")
 
-    db_response = make_api_call(task, slots)
-    return db_response
+    api_response = make_api_call(task, slots)
+    db_result_string = to_db_query_string(api_response)
+    return db_result_string
 
     
 def chat(domain, task):
     import os
-    print(os.path.dirname(os.path.abspath(__file__)))
     DOMAIN = json.load(
         open(os.path.join(CURR_DIR, "STAR", "tasks", task, f"{task}.json"), "r")
     )
@@ -114,15 +114,16 @@ def chat(domain, task):
 
         # Handle DB calls separately
         if system_response in ["[QUERY]", "[QUERY_BOOK]", "[QUERY_CHECK]"]:
-            api_response = handle_api_call(task=task, request_type=system_response, slots=slots)
-            print(f"API: {api_response}")
-            
-        prev_sys_response = system_response
-        print(f"SYS: >> {remove_entity_annotations(system_response)}")
-
-        system_response_model = get_turn_str(
-            "Agent", remove_entity_annotations(system_response)
-        )
+            db_result_string = get_db_result_string(task=task, request_type=system_response, slots=slots)
+            print(f"API: {db_result_string}")
+            prev_sys_response = db_result_string
+            system_response_model = get_turn_str("Agent")
+        else:
+            prev_sys_response = system_response
+            print(f"SYS: >> {remove_entity_annotations(system_response)}")
+            system_response_model = get_turn_str(
+                "Agent", remove_entity_annotations(prev_sys_response)
+            )
         history += system_response_model
 
 

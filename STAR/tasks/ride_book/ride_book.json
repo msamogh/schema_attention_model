@@ -8,7 +8,7 @@
         "user_ride_book_inform_name": "My name is [NAME]",
         "ride_ask_departure": "OK, and where are you departing from? %%departure location%%",
         "user_ride_book_inform_departure_location": "I'm leaving from [LOCATION]",
-        "ride_ask_destination": "Alright, where do you want to go? %%arrival location%%",
+        "ride_ask_destination": "Alright, where do you %want to go%? %%arrival location%%",
         "user_ride_book_inform_destination": "I want to go to [LOCATION]",
         "query_check": "[QUERY_CHECK]",
         "db_ask_confirm_booking": "[RESULT] APIName = ride_book ; AllowsChanges = [BOOLEAN] ; ArrivalLocation = [LOCATION] ; CarModel = [CAR_MODEL] ; CustomerName = [NAME] ; DepartureLocation = [LOCATION] ; DriverName = [NAME] ; LicensePlate = [PLATE] ; MinutesTillPickup = [NUMBER] ; Price = [NUMBER] ; ServiceProvider = [PROVIDER] ; id = [NUMBER] ; ",

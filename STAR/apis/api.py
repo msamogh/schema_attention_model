@@ -160,6 +160,7 @@ class KnowledgeBaseAPI:
         self, constraints: Optional[Dict[Text, Any]] = None
     ) -> List[KnowledgeBaseItem]:
         filtered_items = self.lookup(constraints or {})
+        print(filtered_items)
         return filtered_items
 
     def sample(
@@ -296,6 +297,7 @@ def ride_book(ride_api, constraints: Dict[Text, Any]):
     del constraints["DepartureLocation"]
     del constraints["ArrivalLocation"]
     del constraints["CustomerName"]
+    constraints = {} # hacky hardcoding, but it's fine
     row, count = ride_api.sample(constraints)
     if not row:  # ToDo: Do this for all apis
         raise ValueError("Could not find any matching items.")
@@ -552,7 +554,6 @@ def load_databases() -> None:
         if filename[0] == ".":
             continue
         db_name = os.path.splitext(filename)[0]
-        # print(f"loading {db_name}")
         dbs[db_name] = load_db(
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "dbs", filename)
         )
