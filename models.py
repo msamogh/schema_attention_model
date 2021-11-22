@@ -16,7 +16,7 @@ class ActionBertModel(torch.nn.Module):
                  num_action_labels):
         super(ActionBertModel, self).__init__()
         self.bert_model = BertModel.from_pretrained(model_name_or_path)
-
+        print(f"MODEL INPUT DIM: {num_action_labels}")
         self.dropout = Dropout(dropout)
         self.num_action_labels = num_action_labels
         self.action_classifier = nn.Linear(self.bert_model.config.hidden_size, num_action_labels)
@@ -28,7 +28,8 @@ class ActionBertModel(torch.nn.Module):
                 action_label=None):
         pooled_output = self.bert_model(input_ids=input_ids,
                                         attention_mask=attention_mask,
-                                        token_type_ids=token_type_ids)[1]
+                                        token_type_ids=token_type_ids,
+                                        return_dict=False)[1]
         action_logits = self.action_classifier(self.dropout(pooled_output))
 
         # Compute losses if labels provided
@@ -46,8 +47,8 @@ class SchemaActionBertModel(torch.nn.Module):
                  dropout,
                  num_action_labels):
         super(SchemaActionBertModel, self).__init__()
+        print(f"MODEL INPUT DIM: {num_action_labels}")
         self.bert_model = BertModel.from_pretrained(model_name_or_path)
-
         self.dropout = Dropout(dropout)
         self.num_action_labels = num_action_labels
         self.action_classifier = nn.Linear(self.bert_model.config.hidden_size, num_action_labels)
@@ -63,19 +64,17 @@ class SchemaActionBertModel(torch.nn.Module):
                 sc_attention_mask,
                 sc_token_type_ids,
                 sc_tasks,
-                sc_action_label,
-                sc_full_graph):
+                sc_action_label):
         all_output, pooled_output = self.bert_model(input_ids=input_ids,
                                                     attention_mask=attention_mask,
-                                                    token_type_ids=token_type_ids)
-        action_logits = self.action_classifier(self.dropout(pooled_output))
-
+                                                    token_type_ids=token_type_ids,
+                                                    return_dict=False)
+        # action_logits = self.action_classifier(self.dropout(pooled_output))
+        
         sc_all_output, sc_pooled_output = self.bert_model(input_ids=sc_input_ids,
                                                           attention_mask=sc_attention_mask,
-                                                          token_type_ids=sc_token_type_ids)
-
-
-
+                                                          token_type_ids=sc_token_type_ids,
+                                                          return_dict=False)
         all_output_flat = all_output.view(-1, all_output.size(-1))
         i_probs = F.softmax(all_output_flat.mm(sc_all_output.view(-1, 768).t()), dim=-1).view(all_output_flat.size(0), -1, sc_input_ids.size(-1)).sum(dim=-1)
 
@@ -104,13 +103,13 @@ class SchemaActionBertModel(torch.nn.Module):
                 sc_all_output,
                 sc_pooled_output,
                 sc_tasks,
-                sc_action_label,
-                sc_full_graph):
+                sc_action_label):
 
         all_output, pooled_output = self.bert_model(input_ids=input_ids,
                                         attention_mask=attention_mask,
-                                        token_type_ids=token_type_ids)
-        action_logits = self.action_classifier(self.dropout(pooled_output))
+                                        token_type_ids=token_type_ids,
+                                        return_dict=False)
+        # action_logits = self.action_classifier(self.dropout(pooled_output))
 
         all_output_flat = all_output.view(-1, all_output.size(-1))
         i_probs = F.softmax(all_output_flat.mm(sc_all_output.view(-1, 768).t()), dim=-1).view(all_output_flat.size(0), -1, sc_all_output.size(-2)).sum(dim=-1)
@@ -123,11 +122,12 @@ class SchemaActionBertModel(torch.nn.Module):
                 if tasks[i] != sc_tasks[j]:
                     probs[i,j] = 0
 
-
         action_probs = torch.zeros(probs.size(0), self.num_action_labels).cuda().scatter_add(-1, sc_action_label.unsqueeze(0).repeat(probs.size(0), 1), probs)
-
+        print(f"action_probs: {action_probs.size()}")
         sc_prob = F.sigmoid(self.p_schema(pooled_output))
+        print(f"sc_prob: {sc_prob}")
+        print(f"sc_prob: {sc_prob.size()}")
 
         action_lps = torch.log(action_probs*sc_prob)
-
+        print(f"action_lps: {action_lps}")
         return action_lps, 0

@@ -7,7 +7,7 @@ import torch
 
 from collections import defaultdict
 from torch.utils.data import Dataset
-from tqdm import tqdm
+from tqdm.notebook import tqdm
 
 def filter_dataset(dataset,
                    data_type="happy", # happy, unhappy, multitask
@@ -104,14 +104,15 @@ class NextActionSchema(Dataset):
                  tokenizer,
                  max_seq_length,
                  action_label_to_id,
-                 vocab_file_name):
-        # Check if cached pickle file exists
+                 vocab_file_name,
+                 skip_task=None):
+        # Check if cached pickle file exists        
         data_dirname = os.path.dirname(os.path.abspath(data_path))
+        self.action_label_to_id = action_label_to_id
         cached_path = os.path.join(data_dirname, "schema_action_cached")
         if os.path.exists(cached_path):
             with open(cached_path, "rb") as f:
                 self.examples, self.action_to_response = pickle.load(f)
-
             return None
 
         # Read all of the JSON files in the data directory
@@ -125,28 +126,27 @@ class NextActionSchema(Dataset):
         # next actions.
         node_to_utt = {}
         self.examples = []
+        zero_shot_actions = []
         for task in tqdm(tasks):
             # Get the graph
             graph = task['graph']
 
             # For every edge in the graph, get examples of transfer to each action
-            for prev,action in graph.items():
-                if False and prev in task['r_graph']:
-                    sys_utt = '[wizard] ' + task['replies'][task['r_graph'][prev]] + ' [SEP] '
-                    utterance = '[user] ' + sys_utt + task['replies'][prev] + ' [SEP]'
-                else:
-                    utterance = '[user] ' + task['replies'][prev] + ' [SEP]'
+            for prev, action in graph.items():
+                if action not in action_label_to_id:      
+                    zero_shot_actions.append((task, prev, action))
+                    continue
+
+                utterance = '[user] ' + task['replies'][prev] + ' [SEP]'
 
                 node_to_utt[prev] = utterance 
 
                 # For next action prediction, we can normalize the diff query types
-                #if action in ['query_check', 'query_book']:
+                # if action in ['query_check', 'query_book']:
                 #    action = 'query'
 
-                if action not in action_label_to_id:
-                    continue
-
                 action_label = action_label_to_id[action]
+
                 self.action_to_response[action_label] = task['replies'][action] 
                 encoded = tokenizer.encode(utterance)
                 self.examples.append({
@@ -156,6 +156,24 @@ class NextActionSchema(Dataset):
                     "action": action_label,
                     "task": task['task'],
                 })
+
+        zs_action_idx = len(action_label_to_id)
+        for zs_task, prev_zs_action, zs_action in zero_shot_actions:
+            utterance = '[user] ' + zs_task['replies'][prev_zs_action] + ' [SEP]'
+            self.action_to_response[zs_action_idx] = zs_task['replies'][zs_action]
+            action_label_to_id[zs_action] = zs_action_idx
+            encoded = tokenizer.encode(utterance)
+            self.examples.append({
+                "input_ids": np.array(encoded.ids)[-max_seq_length:],
+                "attention_mask": np.array(encoded.attention_mask)[-max_seq_length:],
+                "token_type_ids": np.array(encoded.type_ids)[-max_seq_length:],
+                "action": zs_action_idx,
+                "task": zs_task['task'],
+            })
+            zs_action_idx += 1
+        
+        print(f"Schema actions length: {len(action_label_to_id)}")
+        self.action_label_to_id = action_label_to_id
 
         with open(cached_path, "wb+") as f:
             pickle.dump([self.examples, self.action_to_response], f)
@@ -175,6 +193,7 @@ class NextActionDataset(Dataset):
         # Check if cached pickle file exists
         data_dirname = os.path.dirname(os.path.abspath(data_path))
         cached_path = os.path.join(data_dirname, "action_cached")
+        self.cached_path = cached_path
         if os.path.exists(cached_path):
             with open(cached_path, "rb") as f:
                 self.action_label_to_id, self.examples = pickle.load(f)
@@ -266,9 +285,14 @@ class NextActionDataset(Dataset):
 
                     if utt_text != "":
                         history += "[{}] {} [SEP] ".format(utt['Agent'], utt_text.strip())
-
+        
         # Write to cache
         with open(cached_path, "wb+") as f:
+            pickle.dump([self.action_label_to_id, self.examples], f)
+
+    def update_action_label_to_id(self, zs_action_label_to_id):
+        self.action_label_to_id = zs_action_label_to_id
+        with open(self.cached_path, "wb+") as f:
             pickle.dump([self.action_label_to_id, self.examples], f)
 
     def __len__(self):

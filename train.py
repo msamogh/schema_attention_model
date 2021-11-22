@@ -4,14 +4,16 @@ import numpy as np
 import os
 import random
 import torch
+from pprint import pprint
 
 from typing import Any, Dict, Tuple
 from collections import Counter, defaultdict
 from torch.utils.data import DataLoader
-from tqdm import tqdm, trange
+# from tqdm import tqdm, trange
+from tqdm.notebook import tqdm, trange
 from transformers import AdamW, GPT2Tokenizer, GPT2LMHeadModel
 from tokenizers import BertWordPieceTokenizer
-from data_readers import filter_dataset, get_entities, GPTDataset, NextActionDataset, NextActionSchema, ResponseGenerationDataset
+from data_readers import filter_dataset, NextActionDataset, NextActionSchema
 from models import ActionBertModel, SchemaActionBertModel
 from sklearn.metrics import f1_score
 from nltk.translate.bleu_score import corpus_bleu
@@ -61,7 +63,10 @@ def evaluate(model,
 
             sc_all_output, sc_pooled_output = model.bert_model(input_ids=sc_batch["input_ids"],
                                                 attention_mask=sc_batch["attention_mask"],
-                                                token_type_ids=sc_batch["token_type_ids"])
+                                                token_type_ids=sc_batch["token_type_ids"],
+                                                return_dict=False)
+#             print(f"type(sc_all_output): {type(sc_all_output)}")
+#             print(f"sc_all_output: {sc_all_output}")
             sc_action_label = sc_batch["action"]
             sc_tasks = sc_batch["task"]
 
@@ -88,15 +93,11 @@ def evaluate(model,
                                                      sc_all_output=sc_all_output,
                                                      sc_pooled_output=sc_pooled_output,
                                                      sc_tasks=sc_tasks,
-                                                     sc_action_label=sc_action_label,
-                                                     sc_full_graph=schema_dataloader.dataset.full_graph)
-                else:
-                    action_logits, _ = model(input_ids=batch["input_ids"],
-                                             attention_mask=batch["attention_mask"],
-                                             token_type_ids=batch["token_type_ids"])
-
+                                                     sc_action_label=sc_action_label)
                 # Argmax to get predictions
+                print(action_logits.size())
                 action_preds = torch.argmax(action_logits, dim=1).cpu().tolist()
+                print(action_preds.cpu().item())
 
                 pred += action_preds
                 true += batch["action"].cpu().tolist()
@@ -127,7 +128,6 @@ def train(args, exp_setting=None):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     elif args.num_epochs == 0:
@@ -135,7 +135,8 @@ def train(args, exp_setting=None):
         pass
     else:
         #args.num_epochs = 0
-        raise Exception("Directory {} already exists".format(args.output_dir))
+        #raise Exception("Directory {} already exists".format(args.output_dir))
+        pass
 
     # Dump arguments to the checkpoint directory, to ensure reproducability.
     if args.num_epochs > 0:
@@ -155,9 +156,6 @@ def train(args, exp_setting=None):
     # Data readers
     if args.task == "action":
         dataset_initializer = NextActionDataset
-    elif args.task == "generation":
-
-        dataset_initializer = ResponseGenerationDataset
     else:
         raise ValueError("Not a valid task type: {}".format(args.task))
 
@@ -165,68 +163,28 @@ def train(args, exp_setting=None):
                                   tokenizer,
                                   args.max_seq_length,
                                   token_vocab_name)
-    #dataset.examples = [e for e in dataset if 'weather' in e['tasks']]
-
-    # Get the action to id mapping
-    if args.task == "generation":
-        action_dataset = NextActionDataset(args.data_path,
-                                           tokenizer,
-                                           args.max_seq_length,
-                                           token_vocab_name)
-        action_label_to_id = action_dataset.action_label_to_id
-        actions = sorted(action_label_to_id, key=action_label_to_id.get)
-
-    if exp_setting is not None:
-        if "domain" in exp_setting:
-            data_type = exp_setting.get("data_type")
-            train_dataset = filter_dataset(dataset,
-                                           data_type=data_type,
-                                           percentage=1.0,
-                                           domain=exp_setting.get("domain"),
-                                           exclude=True,
-                                           train=True)
-
-            test_dataset = filter_dataset(dataset,
-                                          data_type=data_type,
-                                          percentage=1.0,
-                                          domain=exp_setting.get("domain"),
-                                          exclude=False,
-                                          train=False)
-        elif "task" in exp_setting:
-            data_type = exp_setting.get("data_type")
-            train_dataset = filter_dataset(dataset,
-                                           data_type=data_type,
-                                           percentage=1.0,
-                                           task=exp_setting.get("task"),
-                                           exclude=True,
-                                           train=True)
-
-            test_dataset = filter_dataset(dataset,
-                                          data_type=data_type,
-                                          percentage=1.0,
-                                          task=exp_setting.get("task"),
-                                          exclude=False,
-                                          train=False)
-        else:
-            data_type = exp_setting.get("data_type")
-            train_dataset = filter_dataset(dataset,
-                                           data_type=data_type,
-                                           percentage=0.8,
-                                           train=True)
-
-            test_dataset = filter_dataset(dataset,
-                                          data_type=data_type,
-                                          percentage=0.2,
-                                          train=False)
-
-
-    # Load the schema for the next action prediction
     schema = NextActionSchema(args.schema_path,
                               sc_tokenizer,
                               args.schema_max_seq_length,
-                              dataset.action_label_to_id if args.task == "action" else action_label_to_id,
+                              dataset.action_label_to_id,
                               token_vocab_name)
+    dataset.update_action_label_to_id(schema.action_label_to_id)
 
+    if exp_setting is not None:
+        data_type = exp_setting.get("data_type")
+        train_dataset = filter_dataset(dataset,
+                                        data_type=data_type,
+                                        percentage=1.0,
+                                        task=exp_setting.get("task"),
+                                        exclude=True,
+                                        train=True)
+
+        test_dataset = filter_dataset(dataset,
+                                        data_type=data_type,
+                                        percentage=1.0,
+                                        task=exp_setting.get("task"),
+                                        exclude=False,
+                                        train=False)
     # Data loaders
     train_dataset.examples = sorted(train_dataset.examples, key=lambda i:i['tasks'])
     train_dataloader = DataLoader(dataset=train_dataset,
@@ -247,22 +205,17 @@ def train(args, exp_setting=None):
     test_dataloader = DataLoader(dataset=test_dataset,
                                  batch_size=args.train_batch_size,
                                  pin_memory=True)
-
     print("Training set size", len(train_dataloader.dataset))
     print("Testing set size", len(test_dataloader.dataset))
     print("Experimental Setting", exp_setting)
 
     # Load model
     if args.task == "action":
-        if args.use_schema:
-            model = SchemaActionBertModel(args.model_name_or_path,
-                                          dropout=args.dropout,
-                                          num_action_labels=len(train_dataset.action_label_to_id))
-        else:
-            model = ActionBertModel(args.model_name_or_path,
-                                    dropout=args.dropout,
-                                    num_action_labels=len(train_dataset.action_label_to_id))
-
+        print(f"Final training on {len(train_dataset.action_label_to_id)} labels")
+        model = SchemaActionBertModel(args.model_name_or_path,
+                                      dropout=args.dropout,
+                                      num_action_labels=len(train_dataset.action_label_to_id))
+        print(9)
         if torch.cuda.is_available():
             model.to(args.device)
     else:
@@ -270,6 +223,7 @@ def train(args, exp_setting=None):
 
 
     if args.task == "action":
+        print(10)
         optimizer = AdamW(model.parameters(), lr=args.learning_rate, eps=args.adam_epsilon)
         best_score = -1
 
@@ -299,16 +253,17 @@ def train(args, exp_setting=None):
                     # Filter out only the relevant actions
                     relevant_inds = []
                     batch_actions = set(batch['action'].tolist())
-                    batch_tasks = set(batch['tasks'][0])
+                    batch_tasks = set(batch['tasks'])
                     batch_action_tasks = [(batch['action'][i].item(), batch['tasks'][i]) for i in range(len(batch['action']))]
-                    for i,action in enumerate(sc_batch['action'].tolist()):
+                    pprint(batch_action_tasks)
+                    for i, action in enumerate(sc_batch['action'].tolist()):
                         if (action, sc_batch['task'][i]) in batch_action_tasks:
                             relevant_inds.append(i)
 
                     # Filter out sc batch to only relevant inds
                     sc_batch = {
                         k: [v[i] for i in relevant_inds] if type(v) is list else v[relevant_inds]
-                        for k,v in sc_batch.items()
+                        for k, v in sc_batch.items()
                     }
 
                     if torch.cuda.is_available():
@@ -317,6 +272,9 @@ def train(args, exp_setting=None):
                                 continue
 
                             sc_batch[key] = sc_batch[key].to(args.device)
+                    
+                    else:
+                        print("Could not move data to GPU.")
 
                     _, loss = model(input_ids=batch["input_ids"],
                                     attention_mask=batch["attention_mask"],
@@ -327,19 +285,20 @@ def train(args, exp_setting=None):
                                     sc_attention_mask=sc_batch["attention_mask"],
                                     sc_token_type_ids=sc_batch["token_type_ids"],
                                     sc_tasks=sc_batch["task"],
-                                    sc_action_label=sc_batch["action"],
-                                    sc_full_graph=schema.full_graph)
+                                    sc_action_label=sc_batch["action"])
                 else:
                     _, loss = model(input_ids=batch["input_ids"],
                                     attention_mask=batch["attention_mask"],
                                     token_type_ids=batch["token_type_ids"],
                                     action_label=batch["action"])
+                    print("Model loss computed (2).")
 
                 if args.grad_accum > 1:
                     loss = loss / args.grad_accum
 
                 loss.backward()
                 epoch_loss += loss.item()
+                
 
                 if args.grad_accum <= 1 or num_batches % args.grad_accum == 0:
                     if args.max_grad_norm > 0:
@@ -379,10 +338,12 @@ if __name__ == "__main__":
     orig_output_dir = args.output_dir
 
     # ZERO-SHOT TASK TRANSFER EXPERIMENTS
-    for i,task in enumerate(tasks):
+    for i, task in enumerate(tasks):
+        if task != "ride_book":
+            continue
         print("TASK", task)
+        # exp_setting = {"task": task, "data_type": "happy"}
         exp_setting = {"task": task, "data_type": "happy"}
-
         args.action_output_dir = orig_dir + task + "/"
         args.output_dir = orig_output_dir + task + "/"
 
@@ -390,34 +351,7 @@ if __name__ == "__main__":
             scores.append(old_scores[i])
         else:
             scores.append(train(args, exp_setting))
-        print(scores)
 
-        if args.task == "generation":
-            print(np.mean([e[0] for e in scores]))
-            print(np.mean([e[1] for e in scores]))
-            print(np.mean([e[2] for e in scores]))
-        else:
-            print("f1", np.mean([e[0] for e in scores]))
-            print("acc", np.mean([e[1] for e in scores]))
+        print("f1", np.mean([e[0] for e in scores]))
+        print("acc", np.mean([e[1] for e in scores]))
 
-    # ZERO-SHOT DOMAIN TRANSFER EXPERIMENTS
-    #for i,task in enumerate(domains):
-    #    print("DOMAIN", task)
-    #    exp_setting = {"domain": task, "data_type": "happy"}
-
-    #    args.action_output_dir = orig_dir + task + "/"
-    #    args.output_dir = orig_output_dir + task + "/"
-
-    #    if i < len(old_scores):
-    #        scores.append(old_scores[i])
-    #    else:
-    #        scores.append(train(args, exp_setting))
-    #    print(scores)
-
-    #    if args.task == "generation":
-    #        print(np.mean([e[0] for e in scores]))
-    #        print(np.mean([e[1] for e in scores]))
-    #        print(np.mean([e[2] for e in scores]))
-    #    else:
-    #        print("f1", np.mean([e[0] for e in scores]))
-    #        print("acc", np.mean([e[1] for e in scores]))
