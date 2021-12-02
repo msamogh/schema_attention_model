@@ -258,6 +258,7 @@ def train(args, exp_setting=None):
     # Load model
     if args.task == "action":
         if args.use_schema:
+            print(f"Just in: Num actions = {len(train_dataset.action_label_to_id)}")
             model = SchemaActionBertModel(args.model_name_or_path,
                                           dropout=args.dropout,
                                           num_action_labels=len(train_dataset.action_label_to_id))

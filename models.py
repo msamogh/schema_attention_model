@@ -51,7 +51,6 @@ class SchemaActionBertModel(torch.nn.Module):
 
         self.dropout = Dropout(dropout)
         self.num_action_labels = num_action_labels
-        self.action_classifier = nn.Linear(self.bert_model.config.hidden_size, num_action_labels)
         self.p_schema = nn.Linear(self.bert_model.config.hidden_size, 1)
 
     def forward(self,
