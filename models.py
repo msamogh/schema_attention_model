@@ -70,7 +70,6 @@ class SchemaActionBertModel(torch.nn.Module):
                                                     token_type_ids=token_type_ids,
                                                     return_dict=False)
         print(f"pooled_output: {pooled_output}")
-        action_logits = self.action_classifier(self.dropout(pooled_output))
 
         sc_all_output, sc_pooled_output = self.bert_model(input_ids=sc_input_ids,
                                                           attention_mask=sc_attention_mask,
@@ -113,7 +112,6 @@ class SchemaActionBertModel(torch.nn.Module):
                                         attention_mask=attention_mask,
                                         token_type_ids=token_type_ids,
                                         return_dict=False)
-        action_logits = self.action_classifier(self.dropout(pooled_output))
 
         all_output_flat = all_output.view(-1, all_output.size(-1))
         i_probs = F.softmax(all_output_flat.mm(sc_all_output.view(-1, 768).t()), dim=-1).view(all_output_flat.size(0), -1, sc_all_output.size(-2)).sum(dim=-1)

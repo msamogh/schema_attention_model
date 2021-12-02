@@ -61,7 +61,8 @@ def evaluate(model,
 
             sc_all_output, sc_pooled_output = model.bert_model(input_ids=sc_batch["input_ids"],
                                                 attention_mask=sc_batch["attention_mask"],
-                                                token_type_ids=sc_batch["token_type_ids"])
+                                                token_type_ids=sc_batch["token_type_ids"],
+                                                return_dict=False)
             sc_action_label = sc_batch["action"]
             sc_tasks = sc_batch["task"]
 
@@ -155,7 +156,6 @@ def train(args, exp_setting=None):
     if args.task == "action":
         dataset_initializer = NextActionDataset
     elif args.task == "generation":
-
         dataset_initializer = ResponseGenerationDataset
     else:
         raise ValueError("Not a valid task type: {}".format(args.task))
@@ -163,7 +163,9 @@ def train(args, exp_setting=None):
     dataset = dataset_initializer(args.data_path,
                                   tokenizer,
                                   args.max_seq_length,
-                                  token_vocab_name)
+                                  token_vocab_name,
+                                  action_mapping_from_schemas=True,
+                                  schema_path=args.schema_path)
     #dataset.examples = [e for e in dataset if 'weather' in e['tasks']]
 
     # Get the action to id mapping
@@ -171,7 +173,9 @@ def train(args, exp_setting=None):
         action_dataset = NextActionDataset(args.data_path,
                                            tokenizer,
                                            args.max_seq_length,
-                                           token_vocab_name)
+                                           token_vocab_name,
+                                           action_mapping_from_schema=True,
+                                           schema_path=args.schema_path)
         action_label_to_id = action_dataset.action_label_to_id
         actions = sorted(action_label_to_id, key=action_label_to_id.get)
 
@@ -299,16 +303,16 @@ def train(args, exp_setting=None):
                     # Filter out only the relevant actions
                     relevant_inds = []
                     batch_actions = set(batch['action'].tolist())
-                    batch_tasks = set(batch['tasks'][0])
+                    batch_tasks = set(batch['tasks'])
                     batch_action_tasks = [(batch['action'][i].item(), batch['tasks'][i]) for i in range(len(batch['action']))]
-                    for i,action in enumerate(sc_batch['action'].tolist()):
+                    for i, action in enumerate(sc_batch['action'].tolist()):
                         if (action, sc_batch['task'][i]) in batch_action_tasks:
                             relevant_inds.append(i)
 
                     # Filter out sc batch to only relevant inds
                     sc_batch = {
                         k: [v[i] for i in relevant_inds] if type(v) is list else v[relevant_inds]
-                        for k,v in sc_batch.items()
+                        for k, v in sc_batch.items()
                     }
 
                     if torch.cuda.is_available():
@@ -390,6 +394,9 @@ if __name__ == "__main__":
 
     # ZERO-SHOT TASK TRANSFER EXPERIMENTS
     for i,task in enumerate(tasks):
+        if task != "ride_book":
+            # Don't waste time training other zero-shot experiments (as we won't be using them).
+            continue
         print("TASK", task)
         exp_setting = {"task": task, "data_type": "happy"}
 

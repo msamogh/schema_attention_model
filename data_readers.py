@@ -171,7 +171,9 @@ class NextActionDataset(Dataset):
                  data_path,
                  tokenizer,
                  max_seq_length,
-                 vocab_file_name):
+                 vocab_file_name,
+                 action_mapping_from_schemas=False,
+                 schema_path=None):
         # Check if cached pickle file exists
         data_dirname = os.path.dirname(os.path.abspath(data_path))
         cached_path = os.path.join(data_dirname, "action_cached")
@@ -190,10 +192,11 @@ class NextActionDataset(Dataset):
         # actions for all wizard turns.
         self.examples = []
         self.action_label_to_id = {}
+
         for conv in tqdm(conversations):
             # History (so far) for this dialog
             history = ""
-            for i,utt in enumerate(conv['Events']):
+            for i, utt in enumerate(conv['Events']):
                 # NOTE: Ground truth action labels only exist when wizard picks suggestion. 
                 # We skip all custom utterances for action prediction.
                 if utt['Agent'] == 'Wizard' and utt['Action'] in ['query', 'pick_suggestion']:
@@ -266,6 +269,16 @@ class NextActionDataset(Dataset):
 
                     if utt_text != "":
                         history += "[{}] {} [SEP] ".format(utt['Agent'], utt_text.strip())
+
+        if action_mapping_from_schemas:
+            # Populate action_label_to_id from the schemas as well
+            schemas = [
+                json.load(open(data_path + fn + "/" + fn + ".json")) for fn in os.listdir(schema_path)
+            ]
+            for schema in schemas:
+                for _, action in schema['graph'].items():
+                    if action not in self.action_label_to_id:
+                        self.action_label_to_id[action] = len(self.action_label_to_id)
 
         # Write to cache
         with open(cached_path, "wb+") as f:
