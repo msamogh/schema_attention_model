@@ -273,7 +273,7 @@ class NextActionDataset(Dataset):
         if action_mapping_from_schemas:
             # Populate action_label_to_id from the schemas as well
             schemas = [
-                json.load(open(data_path + fn + "/" + fn + ".json")) for fn in os.listdir(schema_path)
+                json.load(open(schema_path + fn + "/" + fn + ".json")) for fn in os.listdir(schema_path)
             ]
             for schema in schemas:
                 for _, action in schema['graph'].items():
