@@ -116,7 +116,7 @@ class NextActionSchema(Dataset):
 
         # Read all of the JSON files in the data directory
         tasks = [
-            json.load(open(data_path + "/" + fn + ".json")) for fn in os.listdir(data_path)
+            json.load(open(data_path + fn + "/" + fn + ".json")) for fn in os.listdir(data_path)
         ]
 
         self.action_to_response = {}
