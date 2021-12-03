@@ -1,0 +1,7 @@
+templates:
+    welcome: Hi there, I am your zero-shot cab ride booking assistant. I have been trained to assist customers book flights, restaurant tables, meetings, etc., but this is my first time helping anyone book a cab, so I hope you will go easy on me :)
+        If at any point you think I lost you completely, you can click the refresh icon next to a message to restart from there.
+        Just say "Hi" to begin talking to me.
+    rephrase: Sorry, I didn't catch that. Could you rephrase that more explicitly?
+    
+

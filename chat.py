@@ -2,7 +2,7 @@ import argparse
 import json
 import numpy as np
 import os
-import random
+import yaml
 from dataclasses import dataclass
 from typing import List
 import re
@@ -22,6 +22,9 @@ from STAR.apis import api
 from data_model_utils import CURR_DIR, get_system_action, load_saved_model
 from slot_extraction import get_entity, to_db_result_string
 
+
+with open('messages.yaml', 'r') as f:
+    MESSAGES = yaml.load(f)['templates']
 
 def user_utterance_to_model_input(user_input, requested_entity_name):
     if len(user_input) < 8 and ("hello" in user_input or "hi" in user_input or "hey" in user_input):
@@ -91,6 +94,8 @@ def chat(domain, task):
     db_results_so_far = {}
     db_result_string = None
     db_result_dict = None
+
+    print(MESSAGES['welcome'])
 
     while True:
         # Fetch user input
