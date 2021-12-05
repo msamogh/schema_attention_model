@@ -106,6 +106,7 @@ def get_dataloader(dataset):
 def history_to_dataset(history, domain_str, task_str):
     max_seq_length = 100
 
+    history = "".join(history)
     processed_history = ' '.join(history.strip().split()[:-1])
     encoded_history  = orig_tokenizer.encode(processed_history)
 
@@ -124,7 +125,7 @@ def history_to_dataset(history, domain_str, task_str):
     return SingleUtteranceDataset(examples)
 
 
-def get_system_action(model, history, domain_str, task_str, device=0):
+async def get_system_action(model, history, domain_str, task_str, device=0):
     dataset = history_to_dataset(history, domain_str, task_str)
     eval_dataloader = DataLoader(dataset, batch_size=1, pin_memory=True)
     
