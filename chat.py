@@ -23,7 +23,7 @@ from data_model_utils import CURR_DIR, get_system_action, load_saved_model
 from slot_extraction import get_entity, to_db_result_string
 
 
-with open("messages.yaml", "r") as f:
+with open("messages.yml", "r") as f:
     MESSAGES = yaml.load(f)["templates"]
 
 

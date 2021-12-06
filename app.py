@@ -18,7 +18,7 @@ async def chat(request):
     return json(response)
 
 @app.route("/restart_from", methods=["POST"])
-async def restart_from():
+async def restart_from(request):
     pass
 
 app.run(host="0.0.0.0", port=5000)
