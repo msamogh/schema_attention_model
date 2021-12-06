@@ -42,7 +42,7 @@ class SingleUtteranceDataset(torch.utils.data.Dataset):
     
 def load_saved_model(task):
     model = SchemaActionBertModel("bert-base-uncased", 0.5, 171).cuda()
-    ckpt = torch.load(f"/blue/daisyw/v.pathak/zs-bot/sds-zs-bot/SAM/schema_attention_model/sam_task_transfer/{task}/model.pt")
+    ckpt = torch.load(f"sam_task_transfer/{task}/model.pt")
     model.load_state_dict(ckpt)
     return model
     
